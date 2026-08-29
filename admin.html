@@ -108,6 +108,72 @@
       margin-top: 10px;
       color: var(--muted);
     }
+
+    .individual-panel {
+      background: var(--surface);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+    .individual-panel[hidden] {
+      display: none !important;
+    }
+    .individual-panel h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+    .individual-panel .panel-note {
+      margin: 0 0 14px;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 14px;
+    }
+    .individual-list {
+      display: grid;
+      gap: 8px;
+    }
+    .individual-row {
+      display: grid;
+      grid-template-columns: 70px minmax(100px, 160px) 1fr 150px;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+    .individual-number {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .individual-name {
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .individual-message {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+    }
+    .individual-row select {
+      min-height: 38px;
+      padding: 7px 10px;
+    }
+    @media (max-width: 720px) {
+      .individual-row {
+        grid-template-columns: 56px 1fr 130px;
+      }
+      .individual-message {
+        grid-column: 2 / -1;
+        grid-row: 2;
+      }
+    }
+
     .preview-wrap {
       display: grid;
       gap: 18px;
@@ -146,7 +212,7 @@
       width: var(--card-width-mm);
       height: var(--card-height-mm);
       background: #fff;
-      border: 2.6px solid var(--oval-color);
+      border: 5.2px solid var(--oval-color);
       border-radius: 9999px;
       overflow: hidden;
       padding: 7mm 8mm 6mm;
@@ -200,14 +266,81 @@
       body {
         background: #fff;
       }
-      .top-card {
+      .top-card,
+      .individual-panel {
         display: none !important;
       }
       .shell {
         max-width: none;
         padding: 0;
       }
-      .preview-wrap {
+  
+    .individual-panel {
+      background: var(--surface);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+    .individual-panel[hidden] {
+      display: none !important;
+    }
+    .individual-panel h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+    .individual-panel .panel-note {
+      margin: 0 0 14px;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 14px;
+    }
+    .individual-list {
+      display: grid;
+      gap: 8px;
+    }
+    .individual-row {
+      display: grid;
+      grid-template-columns: 70px minmax(100px, 160px) 1fr 150px;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+    .individual-number {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .individual-name {
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .individual-message {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+    }
+    .individual-row select {
+      min-height: 38px;
+      padding: 7px 10px;
+    }
+    @media (max-width: 720px) {
+      .individual-row {
+        grid-template-columns: 56px 1fr 130px;
+      }
+      .individual-message {
+        grid-column: 2 / -1;
+        grid-row: 2;
+      }
+    }
+
+    .preview-wrap {
         gap: 0;
       }
       .page-title {
@@ -228,7 +361,7 @@
       <h1>管理・印刷プレビュー</h1>
       <p class="intro">
         スプレッドシートに保存されたメッセージを読み込み、A4印刷用のオーバルカードを自動配置します。<br>
-        サイズは <strong>3種類から選択</strong> できます。後からコードを書き換えなくても切り替え可能です。
+        初期サイズを3種類から選べます。さらに、読み込み後は<strong>メッセージごとに個別サイズ変更</strong>できます。
       </p>
 
       <div class="controls">
@@ -243,7 +376,7 @@
         </div>
 
         <div class="field third">
-          <label for="sizePreset">オーバルサイズ</label>
+          <label for="sizePreset">初期オーバルサイズ</label>
           <select id="sizePreset">
             <option value="small">小（70mm × 45mm）</option>
             <option value="medium" selected>中（80mm × 50mm）</option>
@@ -283,6 +416,14 @@
         ※ 管理用キーは、この管理画面でのみ使用します。<br>
         ※ 印刷時はブラウザの「印刷」から、そのまま紙出力またはPDF保存ができます。
       </p>
+    </section>
+
+    <section id="individualPanel" class="individual-panel" hidden>
+      <h2>個別サイズ設定</h2>
+      <p class="panel-note">
+        各メッセージごとに「小・中・大」を選べます。変更すると印刷プレビューも自動更新されます。
+      </p>
+      <div id="individualList" class="individual-list"></div>
     </section>
 
     <section id="previewWrap" class="preview-wrap"></section>

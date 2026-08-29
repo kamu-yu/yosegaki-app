@@ -1,11 +1,12 @@
-const SETTINGS_KEY = 'yosegaki_admin_settings_v1';
+const SETTINGS_KEY = 'yosegaki_admin_settings_v2';
+const SIZE_OVERRIDES_KEY = 'yosegaki_size_overrides_v1';
 
 const COLORS = [
-  '#4A90E2', // blue
-  '#66BB6A', // green
-  '#F39C12', // orange
-  '#EC6FA9', // pink
-  '#9B6BCE'  // purple
+  '#4A90E2',
+  '#66BB6A',
+  '#F39C12',
+  '#EC6FA9',
+  '#9B6BCE'
 ];
 
 const PRESETS = {
@@ -31,8 +32,11 @@ const clearButton = document.getElementById('clearButton');
 const statusEl = document.getElementById('status');
 const summaryEl = document.getElementById('summary');
 const previewWrap = document.getElementById('previewWrap');
+const individualPanel = document.getElementById('individualPanel');
+const individualList = document.getElementById('individualList');
 
 let loadedMessages = [];
+let sizeOverrides = restoreSizeOverrides();
 
 restoreSettings();
 
@@ -43,10 +47,24 @@ rerenderButton.addEventListener('click', () => {
     return;
   }
   persistSettings();
-  renderPreview(loadedMessages);
+  renderAll();
 });
 printButton.addEventListener('click', () => window.print());
 clearButton.addEventListener('click', clearSavedSettings);
+
+sizePresetSelect.addEventListener('change', () => {
+  persistSettings();
+  // 初期サイズは「個別指定されていないカード」に適用
+  if (loadedMessages.length) renderAll();
+});
+pageMarginSelect.addEventListener('change', () => {
+  persistSettings();
+  if (loadedMessages.length) renderPreview(loadedMessages);
+});
+gridGapSelect.addEventListener('change', () => {
+  persistSettings();
+  if (loadedMessages.length) renderPreview(loadedMessages);
+});
 
 async function loadMessages() {
   const gasUrl = gasUrlInput.value.trim();
@@ -65,6 +83,8 @@ async function loadMessages() {
   setStatus('読み込み中です…');
   summaryEl.textContent = '';
   previewWrap.innerHTML = '';
+  individualList.innerHTML = '';
+  individualPanel.hidden = true;
   persistSettings();
 
   try {
@@ -73,10 +93,7 @@ async function loadMessages() {
     url.searchParams.set('key', adminKey);
     url.searchParams.set('_', Date.now());
 
-    const response = await fetch(url.toString(), {
-      method: 'GET'
-    });
-
+    const response = await fetch(url.toString(), { method: 'GET' });
     const result = await response.json();
 
     if (Array.isArray(result)) {
@@ -88,56 +105,122 @@ async function loadMessages() {
     }
 
     setStatus('');
-    renderPreview(loadedMessages);
+    renderAll();
 
   } catch (error) {
     loadedMessages = [];
     previewWrap.innerHTML = '';
+    individualList.innerHTML = '';
+    individualPanel.hidden = true;
     summaryEl.textContent = '';
     setStatus('読み込みに失敗しました。\n管理用キーやURLを確認してください。');
   }
 }
 
+function renderAll() {
+  renderIndividualControls();
+  renderPreview(loadedMessages);
+}
+
+function renderIndividualControls() {
+  individualList.innerHTML = '';
+
+  if (!loadedMessages.length) {
+    individualPanel.hidden = true;
+    return;
+  }
+
+  individualPanel.hidden = false;
+
+  loadedMessages.forEach((item, index) => {
+    const row = document.createElement('div');
+    row.className = 'individual-row';
+
+    const number = document.createElement('div');
+    number.className = 'individual-number';
+    number.textContent = `No.${index + 1}`;
+
+    const name = document.createElement('div');
+    name.className = 'individual-name';
+    name.textContent = item.name || '（名前なし）';
+
+    const message = document.createElement('div');
+    message.className = 'individual-message';
+    message.textContent = item.message || '';
+
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', `${item.name || 'メッセージ'} のサイズ`);
+
+    const defaultKey = sizePresetSelect.value || 'medium';
+    const overrideKey = getOverrideKey(item);
+    const selectedKey = sizeOverrides[overrideKey] || defaultKey;
+
+    [
+      ['default', `初期設定に従う（${PRESETS[defaultKey].label}）`],
+      ['small', '小 70×45mm'],
+      ['medium', '中 80×50mm'],
+      ['large', '大 85×55mm']
+    ].forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      if (
+        (value === 'default' && !sizeOverrides[overrideKey]) ||
+        value === selectedKey
+      ) {
+        option.selected = true;
+      }
+      select.appendChild(option);
+    });
+
+    select.addEventListener('change', () => {
+      if (select.value === 'default') {
+        delete sizeOverrides[overrideKey];
+      } else {
+        sizeOverrides[overrideKey] = select.value;
+      }
+      persistSizeOverrides();
+      renderPreview(loadedMessages);
+    });
+
+    row.appendChild(number);
+    row.appendChild(name);
+    row.appendChild(message);
+    row.appendChild(select);
+    individualList.appendChild(row);
+  });
+}
+
 function renderPreview(messages) {
-  const presetKey = sizePresetSelect.value;
-  const preset = PRESETS[presetKey] || PRESETS.medium;
   const pageMargin = Number(pageMarginSelect.value) || 10;
-  const gridGap = Number(gridGapSelect.value) || 6;
+  const gap = Number(gridGapSelect.value) || 6;
 
-  const cols = calcFitCount(PAGE.width, pageMargin, preset.width, gridGap);
-  const rows = calcFitCount(PAGE.height, pageMargin, preset.height, gridGap);
-  const perPage = Math.max(1, cols * rows);
+  const packedPages = packMessages(messages, pageMargin, gap);
 
-  const pages = chunk(messages, perPage);
   previewWrap.innerHTML = '';
 
-  pages.forEach((pageMessages, pageIndex) => {
+  packedPages.forEach((pageData, pageIndex) => {
     const block = document.createElement('section');
     block.className = 'page-block';
 
     const title = document.createElement('p');
     title.className = 'page-title';
-    title.textContent = `プレビュー ${pageIndex + 1} / ${pages.length || 1} ページ`;
+    title.textContent = `プレビュー ${pageIndex + 1} / ${packedPages.length || 1} ページ`;
     block.appendChild(title);
 
     const page = document.createElement('div');
     page.className = 'print-page';
-    page.style.setProperty('--page-margin-mm', `${pageMargin}mm`);
-    page.style.setProperty('--grid-gap-mm', `${gridGap}mm`);
-    page.style.setProperty('--grid-cols', String(cols));
-    page.style.setProperty('--card-width-mm', `${preset.width}mm`);
-    page.style.setProperty('--card-height-mm', `${preset.height}mm`);
 
-    const grid = document.createElement('div');
-    grid.className = 'print-grid';
-
-    pageMessages.forEach((item, indexOnPage) => {
-      const globalIndex = pageIndex * perPage + indexOnPage;
-      const color = COLORS[globalIndex % COLORS.length];
-
+    pageData.forEach((entry) => {
+      const item = entry.item;
       const card = document.createElement('article');
       card.className = 'oval-card';
-      card.style.setProperty('--oval-color', color);
+      card.style.position = 'absolute';
+      card.style.left = `${entry.x}mm`;
+      card.style.top = `${entry.y}mm`;
+      card.style.width = `${entry.width}mm`;
+      card.style.height = `${entry.height}mm`;
+      card.style.setProperty('--oval-color', COLORS[entry.globalIndex % COLORS.length]);
 
       const messageArea = document.createElement('div');
       messageArea.className = 'message-area';
@@ -154,10 +237,9 @@ function renderPreview(messages) {
 
       card.appendChild(messageArea);
       card.appendChild(nameLine);
-      grid.appendChild(card);
+      page.appendChild(card);
     });
 
-    page.appendChild(grid);
     block.appendChild(page);
     previewWrap.appendChild(block);
   });
@@ -169,16 +251,75 @@ function renderPreview(messages) {
     previewWrap.appendChild(empty);
   }
 
-  const totalPages = Math.max(1, Math.ceil(messages.length / perPage));
+  const counts = { small: 0, medium: 0, large: 0 };
+  messages.forEach(item => {
+    const key = getCardPresetKey(item);
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
   summaryEl.textContent =
-    `読み込み件数：${messages.length}件　/　サイズ：${preset.label}（${preset.width}×${preset.height}mm）　/　1ページあたり：${perPage}件（${cols}列 × ${rows}段）　/　総ページ数：${totalPages}`;
+    `読み込み件数：${messages.length}件　/　小：${counts.small}件　中：${counts.medium}件　大：${counts.large}件　/　総ページ数：${Math.max(1, packedPages.length)}`;
 
   requestAnimationFrame(fitAllText);
 }
 
+function packMessages(messages, margin, gap) {
+  const pages = [];
+  let currentPage = [];
+  let x = margin;
+  let y = margin;
+  let rowHeight = 0;
+
+  messages.forEach((item, globalIndex) => {
+    const presetKey = getCardPresetKey(item);
+    const preset = PRESETS[presetKey];
+
+    // 横に入らなければ次の段へ
+    if (x + preset.width > PAGE.width - margin + 0.001) {
+      x = margin;
+      y += rowHeight + gap;
+      rowHeight = 0;
+    }
+
+    // 縦に入らなければ次ページへ
+    if (y + preset.height > PAGE.height - margin + 0.001) {
+      if (currentPage.length) pages.push(currentPage);
+      currentPage = [];
+      x = margin;
+      y = margin;
+      rowHeight = 0;
+    }
+
+    currentPage.push({
+      item,
+      globalIndex,
+      x,
+      y,
+      width: preset.width,
+      height: preset.height,
+      presetKey
+    });
+
+    x += preset.width + gap;
+    rowHeight = Math.max(rowHeight, preset.height);
+  });
+
+  if (currentPage.length) pages.push(currentPage);
+  return pages;
+}
+
+function getCardPresetKey(item) {
+  const defaultKey = sizePresetSelect.value || 'medium';
+  const override = sizeOverrides[getOverrideKey(item)];
+  return PRESETS[override] ? override : defaultKey;
+}
+
+function getOverrideKey(item) {
+  return String(item.id ?? `${item.name || ''}::${item.message || ''}`);
+}
+
 function fitAllText() {
-  const cards = document.querySelectorAll('.oval-card');
-  cards.forEach(card => fitCardText(card));
+  document.querySelectorAll('.oval-card').forEach(card => fitCardText(card));
 }
 
 function fitCardText(card) {
@@ -190,31 +331,19 @@ function fitCardText(card) {
   textEl.style.fontSize = `${size}pt`;
 
   while (size > 9) {
-    if (textEl.scrollHeight <= messageArea.clientHeight + 1 &&
-        textEl.scrollWidth <= messageArea.clientWidth + 1) {
-      break;
-    }
+    const fits =
+      textEl.scrollHeight <= messageArea.clientHeight + 1 &&
+      textEl.scrollWidth <= messageArea.clientWidth + 1;
+
+    if (fits) break;
+
     size -= 0.5;
     textEl.style.fontSize = `${size}pt`;
   }
 
   if (size < 9) {
-    size = 9;
     textEl.style.fontSize = '9pt';
   }
-}
-
-function calcFitCount(pageSize, margin, cardSize, gap) {
-  const usable = pageSize - margin * 2;
-  return Math.max(1, Math.floor((usable + gap) / (cardSize + gap)));
-}
-
-function chunk(items, size) {
-  const result = [];
-  for (let i = 0; i < items.length; i += size) {
-    result.push(items.slice(i, i + size));
-  }
-  return result;
 }
 
 function setStatus(message) {
@@ -245,8 +374,22 @@ function restoreSettings() {
   }
 }
 
+function persistSizeOverrides() {
+  localStorage.setItem(SIZE_OVERRIDES_KEY, JSON.stringify(sizeOverrides));
+}
+
+function restoreSizeOverrides() {
+  try {
+    return JSON.parse(localStorage.getItem(SIZE_OVERRIDES_KEY) || '{}');
+  } catch (error) {
+    return {};
+  }
+}
+
 function clearSavedSettings() {
   localStorage.removeItem(SETTINGS_KEY);
+  localStorage.removeItem(SIZE_OVERRIDES_KEY);
+  sizeOverrides = {};
   gasUrlInput.value = '';
   adminKeyInput.value = '';
   sizePresetSelect.value = 'medium';
@@ -254,6 +397,8 @@ function clearSavedSettings() {
   gridGapSelect.value = '6';
   loadedMessages = [];
   previewWrap.innerHTML = '';
+  individualList.innerHTML = '';
+  individualPanel.hidden = true;
   summaryEl.textContent = '';
   setStatus('保存済み設定を消去しました。');
 }
