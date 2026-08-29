@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>寄せ書きメッセージ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <section class="card" aria-labelledby="page-title">
+      <p class="eyebrow">MESSAGE CARD</p>
+      <h1 id="page-title">メッセージをお願いします</h1>
+      <p class="intro">
+        お名前と、140字以内のメッセージをご入力ください。
+      </p>
+
+      <form id="messageForm" novalidate>
+        <div class="field">
+          <label for="name">お名前</label>
+          <input
+            id="name"
+            name="name"
+            type="text"
+            maxlength="40"
+            autocomplete="name"
+            placeholder="例：山田 太郎"
+            required
+          >
+        </div>
+
+        <div class="field">
+          <div class="label-row">
+            <label for="message">メッセージ</label>
+            <span id="counter" class="counter" aria-live="polite">0 / 140文字</span>
+          </div>
+
+          <textarea
+            id="message"
+            name="message"
+            maxlength="140"
+            rows="7"
+            placeholder="140字以内でご入力ください"
+            required
+          ></textarea>
+          <p class="help">141字目以降は入力できません。</p>
+        </div>
+
+        <p id="formMessage" class="form-message" role="status" aria-live="polite"></p>
+
+        <button id="submitButton" type="submit" disabled>
+          メッセージを送る
+        </button>
+      </form>
+
+      <section id="successPanel" class="success-panel" hidden>
+        <div class="success-mark" aria-hidden="true">✓</div>
+        <h2>送信しました</h2>
+        <p>ご協力ありがとうございました。</p>
+      </section>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
