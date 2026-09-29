@@ -1,5 +1,5 @@
-const SETTINGS_KEY = 'yosegaki_admin_settings_v2';
-const SIZE_OVERRIDES_KEY = 'yosegaki_size_overrides_v1';
+const SETTINGS_KEY = 'yosegaki_admin_settings_v3';
+const SIZE_OVERRIDES_KEY = 'yosegaki_size_overrides_v2';
 
 const COLORS = [
   '#4A90E2',
@@ -15,10 +15,7 @@ const PRESETS = {
   large:  { label: '大', width: 85, height: 55 }
 };
 
-const PAGE = {
-  width: 210,
-  height: 297
-};
+const PAGE = { width: 210, height: 297 };
 
 const gasUrlInput = document.getElementById('gasUrl');
 const adminKeyInput = document.getElementById('adminKey');
@@ -54,7 +51,6 @@ clearButton.addEventListener('click', clearSavedSettings);
 
 sizePresetSelect.addEventListener('change', () => {
   persistSettings();
-  // 初期サイズは「個別指定されていないカード」に適用
   if (loadedMessages.length) renderAll();
 });
 pageMarginSelect.addEventListener('change', () => {
@@ -66,11 +62,25 @@ gridGapSelect.addEventListener('change', () => {
   if (loadedMessages.length) renderPreview(loadedMessages);
 });
 
-async function loadMessages() {
+async function postToGas(payload) {
   const gasUrl = gasUrlInput.value.trim();
+  if (!gasUrl) throw new Error('Google Apps Script のURLを入力してください。');
+
+  const response = await fetch(gasUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  return await response.json();
+}
+
+async function loadMessages() {
   const adminKey = adminKeyInput.value.trim();
 
-  if (!gasUrl) {
+  if (!gasUrlInput.value.trim()) {
     setStatus('Google Apps Script のURLを入力してください。');
     return;
   }
@@ -88,22 +98,16 @@ async function loadMessages() {
   persistSettings();
 
   try {
-    const url = new URL(gasUrl);
-    url.searchParams.set('action', 'list');
-    url.searchParams.set('key', adminKey);
-    url.searchParams.set('_', Date.now());
+    const result = await postToGas({
+      action: 'list',
+      key: adminKey
+    });
 
-    const response = await fetch(url.toString(), { method: 'GET' });
-    const result = await response.json();
-
-    if (Array.isArray(result)) {
-      loadedMessages = result;
-    } else if (result && result.success === false) {
-      throw new Error(result.message || '読み込みに失敗しました。');
-    } else {
-      throw new Error('読み込み結果が想定と異なります。');
+    if (!result || result.success !== true || !Array.isArray(result.messages)) {
+      throw new Error(result && result.message ? result.message : '読み込み結果が想定と異なります。');
     }
 
+    loadedMessages = result.messages;
     setStatus('');
     renderAll();
 
@@ -113,7 +117,7 @@ async function loadMessages() {
     individualList.innerHTML = '';
     individualPanel.hidden = true;
     summaryEl.textContent = '';
-    setStatus('読み込みに失敗しました。\n管理用キーやURLを確認してください。');
+    setStatus(`読み込みに失敗しました。\n${error.message || '管理用キーやURLを確認してください。'}`);
   }
 }
 
@@ -183,18 +187,71 @@ function renderIndividualControls() {
       renderPreview(loadedMessages);
     });
 
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'delete-button';
+    deleteButton.textContent = '削除';
+    deleteButton.setAttribute('aria-label', `${item.name || 'このメッセージ'} を削除`);
+    deleteButton.addEventListener('click', () => deleteOneMessage(item, deleteButton));
+
     row.appendChild(number);
     row.appendChild(name);
     row.appendChild(message);
     row.appendChild(select);
+    row.appendChild(deleteButton);
     individualList.appendChild(row);
   });
+}
+
+async function deleteOneMessage(item, button) {
+  const adminKey = adminKeyInput.value.trim();
+  if (!adminKey) {
+    setStatus('削除するには管理用キーを入力してください。');
+    return;
+  }
+
+  const displayName = item.name || '名前なし';
+  const ok = window.confirm(
+    `「${displayName}」さんのメッセージを削除します。\n\nこの操作はスプレッドシートから行を削除します。管理画面には元に戻す機能がありません。\nよろしいですか？`
+  );
+
+  if (!ok) return;
+
+  button.disabled = true;
+  button.textContent = '削除中…';
+  setStatus('削除しています…');
+
+  try {
+    const result = await postToGas({
+      action: 'delete',
+      key: adminKey,
+      row: item.row,
+      timestampMs: item.timestampMs,
+      name: item.name || '',
+      message: item.message || ''
+    });
+
+    if (!result || result.success !== true) {
+      throw new Error(result && result.message ? result.message : '削除に失敗しました。');
+    }
+
+    const overrideKey = getOverrideKey(item);
+    delete sizeOverrides[overrideKey];
+    persistSizeOverrides();
+
+    setStatus('削除しました。最新の一覧を読み込み直しています…');
+    await loadMessages();
+
+  } catch (error) {
+    setStatus(`削除に失敗しました。\n${error.message || ''}`);
+    button.disabled = false;
+    button.textContent = '削除';
+  }
 }
 
 function renderPreview(messages) {
   const pageMargin = Number(pageMarginSelect.value) || 10;
   const gap = Number(gridGapSelect.value) || 6;
-
   const packedPages = packMessages(messages, pageMargin, gap);
 
   previewWrap.innerHTML = '';
@@ -228,7 +285,6 @@ function renderPreview(messages) {
       const messageP = document.createElement('p');
       messageP.className = 'message-text';
       messageP.textContent = item.message || '';
-
       messageArea.appendChild(messageP);
 
       const nameLine = document.createElement('div');
@@ -274,14 +330,12 @@ function packMessages(messages, margin, gap) {
     const presetKey = getCardPresetKey(item);
     const preset = PRESETS[presetKey];
 
-    // 横に入らなければ次の段へ
     if (x + preset.width > PAGE.width - margin + 0.001) {
       x = margin;
       y += rowHeight + gap;
       rowHeight = 0;
     }
 
-    // 縦に入らなければ次ページへ
     if (y + preset.height > PAGE.height - margin + 0.001) {
       if (currentPage.length) pages.push(currentPage);
       currentPage = [];
@@ -315,7 +369,8 @@ function getCardPresetKey(item) {
 }
 
 function getOverrideKey(item) {
-  return String(item.id ?? `${item.name || ''}::${item.message || ''}`);
+  const stamp = item.timestampMs ?? item.timestamp ?? '';
+  return `${stamp}::${item.name || ''}::${item.message || ''}`;
 }
 
 function fitAllText() {
@@ -336,14 +391,11 @@ function fitCardText(card) {
       textEl.scrollWidth <= messageArea.clientWidth + 1;
 
     if (fits) break;
-
     size -= 0.5;
     textEl.style.fontSize = `${size}pt`;
   }
 
-  if (size < 9) {
-    textEl.style.fontSize = '9pt';
-  }
+  if (size < 9) textEl.style.fontSize = '9pt';
 }
 
 function setStatus(message) {
